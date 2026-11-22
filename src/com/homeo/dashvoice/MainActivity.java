@@ -396,13 +396,17 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
 
         stockVoiceManage = new Button(this);
         stockVoiceManage.setText("จัดการ Freeze / คืนค่าผ่านระบบ");
-        stockVoiceManage.setOnClickListener(v -> openStockVoiceSettings());
+        stockVoiceManage.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) { openStockVoiceSettings(); }
+        });
         panel.addView(stockVoiceManage);
 
-        experimental.setOnCheckedChangeListener((button, checked) -> {
-            settings.edit().putBoolean(KEY_EXPERIMENTAL_VOICE, checked).apply();
-            panel.setVisibility(checked ? View.VISIBLE : View.GONE);
-            if (checked) refreshStockVoiceStatus();
+        experimental.setOnCheckedChangeListener(new android.widget.CompoundButton.OnCheckedChangeListener() {
+            @Override public void onCheckedChanged(android.widget.CompoundButton button, boolean checked) {
+                settings.edit().putBoolean(KEY_EXPERIMENTAL_VOICE, checked).apply();
+                panel.setVisibility(checked ? View.VISIBLE : View.GONE);
+                if (checked) refreshStockVoiceStatus();
+            }
         });
         refreshStockVoiceStatus();
     }
@@ -439,14 +443,16 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
                 .setMessage("เปิดหน้าข้อมูลแอปของระบบเพื่อปิดหรือเปิดกลับ หากรถไม่มีปุ่มปิดใช้งาน "
                         + "แสดงว่าเฟิร์มแวร์ไม่รองรับ ไม่ควรบังคับปิด")
                 .setNegativeButton("ยกเลิก", null)
-                .setPositiveButton("เปิดการตั้งค่า", (dialog, which) -> {
-                    try {
-                        android.content.Intent intent = new android.content.Intent(
-                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                android.net.Uri.parse("package:" + STOCK_VOICE_PACKAGE));
-                        startActivity(intent);
-                    } catch (RuntimeException e) {
-                        toast("รถไม่รองรับการเปิดหน้าจัดการแอปนี้");
+                .setPositiveButton("เปิดการตั้งค่า", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface dialog, int which) {
+                        try {
+                            android.content.Intent intent = new android.content.Intent(
+                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                    android.net.Uri.parse("package:" + STOCK_VOICE_PACKAGE));
+                            startActivity(intent);
+                        } catch (RuntimeException e) {
+                            toast("รถไม่รองรับการเปิดหน้าจัดการแอปนี้");
+                        }
                     }
                 })
                 .show();
