@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.homeo.dashvoice"
-    android:versionCode="2"
-    android:versionName="0.2.0">
+    package="com.oxsacool.thaivoice"
+    android:versionCode="1"
+    android:versionName="0.1.0-alpha.1">
 
     <uses-sdk android:minSdkVersion="28" android:targetSdkVersion="28"/>
 
@@ -10,20 +10,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
 
-    <!--
-      BYDAuto vehicle-control permissions. All are protectionLevel:dangerous
-      on this build (verified via `pm list permissions -f`), which means the
-      user can grant them at runtime like RECORD_AUDIO. No root, no platform
-      signature, no ContextWrapper bypass needed.
-
-      _COMMON = read + write for the subsystem.
-    -->
+    <!-- Only request the climate permission provided by the firmware. -->
     <uses-permission android:name="android.permission.BYDAUTO_AC_COMMON"/>
-    <uses-permission android:name="android.permission.BYDAUTO_BODYWORK_COMMON"/>
-    <uses-permission android:name="android.permission.BYDAUTO_LIGHT_COMMON"/>
-    <uses-permission android:name="android.permission.BYDAUTO_DOOR_LOCK_COMMON"/>
-    <uses-permission android:name="android.permission.BYDAUTO_ENERGY_COMMON"/>
-    <uses-permission android:name="android.permission.BYDAUTO_INSTRUMENT_COMMON"/>
 
     <uses-feature android:name="android.hardware.microphone" android:required="true"/>
 
@@ -35,7 +23,7 @@
         android:allowBackup="false">
 
         <activity
-            android:name=".MainActivity"
+            android:name="com.homeo.dashvoice.MainActivity"
             android:exported="true"
             android:screenOrientation="landscape">
             <intent-filter>
@@ -45,16 +33,16 @@
         </activity>
 
         <service
-            android:name=".KeepAliveJobService"
+            android:name="com.homeo.dashvoice.KeepAliveJobService"
             android:permission="android.permission.BIND_JOB_SERVICE"
             android:exported="false"/>
 
         <service
-            android:name=".MicKeyService"
+            android:name="com.homeo.dashvoice.MicKeyService"
             android:exported="false"
             android:foregroundServiceType="microphone"/>
 
-        <receiver android:name=".BootReceiver" android:exported="true" android:enabled="true">
+        <receiver android:name="com.homeo.dashvoice.BootReceiver" android:exported="true" android:enabled="true">
             <intent-filter android:priority="1000">
                 <action android:name="android.intent.action.BOOT_COMPLETED"/>
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED"/>

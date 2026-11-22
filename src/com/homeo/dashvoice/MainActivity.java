@@ -25,16 +25,13 @@ import java.util.List;
 /**
  * Push-to-talk English climate control for BYD DiLink.
  *
- * <p>Backend: {@link BydAcApi}, which reaches
- * {@code android.hardware.bydauto.ac.BYDAutoAcDevice} via reflection and a
- * ContextWrapper that no-ops BYDAUTO_* permission checks. No root, no
- * accessibility service, no UI tapping.
+ * <p>Backend: BydAcApi, using the normal application permissions.
  *
  * <p>The Vosk speech model is loaded from the app's external files dir so it
  * can be pushed with adb without rebuilding a 60 MB APK:
  * <pre>
  *   adb push vosk-model-small-en-us-0.15 \
- *     /sdcard/Android/data/com.homeo.dashvoice/files/model
+ *     /sdcard/Android/data/com.oxsacool.thaivoice/files/model
  * </pre>
  */
 public class MainActivity extends Activity implements VoskEngine.Listener {
@@ -50,6 +47,12 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
     private TextView presetLabel;
     private TextView status;
     private TextView setupView;
+    private TextView stockVoiceStatus;
+    private Button stockVoiceManage;
+    // Verified on the upstream Di2.1H unit only; other firmware may differ.
+    private static final String STOCK_VOICE_PACKAGE = "com.byd.autovoice.aispeech";
+    private static final String VOICE_OPTIONS_PREFS = "voice_options";
+    private static final String KEY_EXPERIMENTAL_VOICE = "experimental_voice_options";
 
     /**
      * BYDAUTO permissions we request. All are dangerous-level on this build
@@ -58,12 +61,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
      */
     private static final String[] BYD_PERMS = {
             "android.permission.BYDAUTO_AC_COMMON",
-            "android.permission.BYDAUTO_BODYWORK_COMMON",
-            "android.permission.BYDAUTO_LIGHT_COMMON",
-            "android.permission.BYDAUTO_DOOR_LOCK_COMMON",
-            "android.permission.BYDAUTO_ENERGY_COMMON",
-            "android.permission.BYDAUTO_INSTRUMENT_COMMON",
-    };
+                                                                };
 
     @Override
     protected void onCreate(Bundle b) {
@@ -80,14 +78,14 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
 
         // ---- title ----
         TextView title = new TextView(this);
-        title.setText("BYD DashVoice");
+        title.setText("BYD ThaiVoice");
         title.setTextSize(22f);
         title.setTypeface(title.getTypeface(), Typeface.BOLD);
         title.setTextColor(Color.parseColor("#1565C0"));
         root.addView(title);
 
         TextView sub = new TextView(this);
-        sub.setText("English voice control — direct BYDAuto API, no root");
+        sub.setText("Alpha 1 • หน้าจอไทย | เสียงยังเป็นภาษาอังกฤษ");
         sub.setTextSize(12f);
         sub.setTextColor(Color.parseColor("#666666"));
         root.addView(sub);
@@ -105,7 +103,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
 
         // ---- push to talk ----
         talkBtn = new Button(this);
-        talkBtn.setText("HOLD TO TALK");
+        talkBtn.setText("แตะเพื่อพูด (EN)");
         talkBtn.setTextSize(20f);
         talkBtn.setTypeface(talkBtn.getTypeface(), Typeface.BOLD);
         talkBtn.setBackgroundColor(Color.parseColor("#1565C0"));
@@ -120,7 +118,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
 
         // ---- Mic-button hook toggle (starts/stops MicKeyService) ----
         TextView hookHdr = new TextView(this);
-        hookHdr.setText("Steering-wheel mic button");
+        hookHdr.setText("ปุ่มไมค์พวงมาลัย (ทดลอง)");
         hookHdr.setTextSize(12f);
         hookHdr.setTextColor(Color.parseColor("#666666"));
         LinearLayout.LayoutParams hhp = new LinearLayout.LayoutParams(
@@ -142,8 +140,8 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
             KeepAliveJobService.schedule(this);
         }
         hookBtn.setText(hookOn[0]
-                ? "Mic-button hook: ON (tap to disable)"
-                : "Enable mic-button hook (Xiaodi will race)");
+                ? "ปุ่มไมค์: เปิด • แตะเพื่อปิด"
+                : "เปิดปุ่มไมค์ (อาจชนกับผู้ช่วย BYD)");
         hookBtn.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 hookOn[0] = !hookOn[0];
@@ -151,13 +149,13 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
                 if (hookOn[0]) {
                     MicKeyService.ensureRunning(MainActivity.this);
                     KeepAliveJobService.schedule(MainActivity.this);
-                    hookBtn.setText("Mic-button hook: ON (tap to disable)");
-                    toast("Mic-button hook enabled");
+                    hookBtn.setText("ปุ่มไมค์: เปิด • แตะเพื่อปิด");
+                    toast("เปิดปุ่มไมค์แล้ว");
                 } else {
                     MicKeyService.stop(MainActivity.this);
                     KeepAliveJobService.cancel(MainActivity.this);
-                    hookBtn.setText("Enable mic-button hook (Xiaodi will race)");
-                    toast("Mic-button hook disabled");
+                    hookBtn.setText("เปิดปุ่มไมค์ (อาจชนกับผู้ช่วย BYD)");
+                    toast("ปิดปุ่มไมค์แล้ว");
                 }
             }
         });
@@ -166,11 +164,13 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         hbp.topMargin = dp(4);
         root.addView(hookBtn, hbp);
 
+        addStockVoiceOptions(root);
+
         // ---- openable apps (install-dependent, so listed live) ----
         AppLauncher launcher = Commands.launcher();
         if (launcher != null && !launcher.isEmpty()) {
             TextView appHdr = new TextView(this);
-            appHdr.setText("Apps you can open by voice");
+            appHdr.setText("แอปที่เปิดด้วยเสียงได้");
             appHdr.setTextSize(12f);
             appHdr.setTextColor(Color.parseColor("#666666"));
             LinearLayout.LayoutParams ahp = new LinearLayout.LayoutParams(
@@ -218,7 +218,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
 
         // ---- Saved preset ----
         TextView preHdr = new TextView(this);
-        preHdr.setText("My preset");
+        preHdr.setText("ตั้งค่าแอร์ที่บันทึก");
         preHdr.setTextSize(12f);
         preHdr.setTextColor(Color.parseColor("#666666"));
         LinearLayout.LayoutParams php = new LinearLayout.LayoutParams(
@@ -229,29 +229,29 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         presetLabel = new TextView(this);
         presetLabel.setTextSize(12f);
         presetLabel.setTextColor(Color.parseColor("#0D47A1"));
-        presetLabel.setText("saved: " + ClimatePreset.load(this).describe());
+        presetLabel.setText("บันทึกแล้ว: " + ClimatePreset.load(this).describe());
         root.addView(presetLabel);
 
         LinearLayout preRow = new LinearLayout(this);
         preRow.setOrientation(LinearLayout.HORIZONTAL);
 
         Button savePre = new Button(this);
-        savePre.setText("Save current");
+        savePre.setText("บันทึกค่าปัจจุบัน");
         savePre.setTextSize(11f);
         savePre.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                if (ac == null) { toast("AC API not available"); return; }
+                if (ac == null) { toast("ยังเข้าถึงระบบแอร์ไม่ได้"); return; }
                 // Read on a worker thread: each getter is a binder round trip.
                 new Thread(new Runnable() {
                     @Override public void run() {
                         final ClimatePreset p = ClimatePreset.capture(ac);
                         if (!p.saved) {
-                            postAppend("could not read the climate state");
+                            postAppend("อ่านสถานะแอร์ไม่สำเร็จ");
                             return;
                         }
                         p.save(MainActivity.this);
-                        postPresetLabel("saved: " + p.describe());
-                        postAppend("preset saved: " + p.describe());
+                        postPresetLabel("บันทึกแล้ว: " + p.describe());
+                        postAppend("บันทึกค่าแอร์แล้ว: " + p.describe());
                     }
                 }, "preset-save").start();
             }
@@ -260,7 +260,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
                 0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
 
         Button applyPre = new Button(this);
-        applyPre.setText("Apply");
+        applyPre.setText("เรียกใช้");
         applyPre.setTextSize(11f);
         applyPre.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
@@ -277,7 +277,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         // duplicate test-button grid is gone. What is still worth testing on
         // its own is audio, because the feedback tones compete with Xiaodi.
         TextView sndHdr = new TextView(this);
-        sndHdr.setText("Sound check");
+        sndHdr.setText("ทดสอบเสียง (EN)");
         sndHdr.setTextSize(12f);
         sndHdr.setTextColor(Color.parseColor("#666666"));
         LinearLayout.LayoutParams shp = new LinearLayout.LayoutParams(
@@ -287,10 +287,10 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
 
         LinearLayout sndRow = new LinearLayout(this);
         sndRow.setOrientation(LinearLayout.HORIZONTAL);
-        addSoundBtn(sndRow, "listening", 0);
-        addSoundBtn(sndRow, "done", 1);
-        addSoundBtn(sndRow, "not caught", 2);
-        addSoundBtn(sndRow, "refused", 3);
+        addSoundBtn(sndRow, "กำลังฟัง", 0);
+        addSoundBtn(sndRow, "สำเร็จ", 1);
+        addSoundBtn(sndRow, "ไม่เข้าใจ", 2);
+        addSoundBtn(sndRow, "รถปฏิเสธ", 3);
         addRow(root, sndRow);
 
         // ---- heard / status ----
@@ -315,7 +315,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
 
         // ---- command reference ----
         TextView cmdHdr = new TextView(this);
-        cmdHdr.setText("What you can say");
+        cmdHdr.setText("คำสั่งเสียงที่รองรับ (ภาษาอังกฤษ)");
         cmdHdr.setTextSize(14f);
         cmdHdr.setAllCaps(true);
         cmdHdr.setTypeface(cmdHdr.getTypeface(), Typeface.BOLD);
@@ -326,8 +326,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         root.addView(cmdHdr, chp);
 
         TextView cmdSub = new TextView(this);
-        cmdSub.setText("Press the steering-wheel mic button, or HOLD TO TALK above. "
-                + "Tap any phrase to run it without speaking.");
+        cmdSub.setText("พูดภาษาอังกฤษ หรือแตะตัวอย่างภาษาไทยเพื่อทดสอบคำสั่งโดยไม่ใช้เสียง (ขณะจอดรถ)");
         cmdSub.setTextSize(11f);
         cmdSub.setTextColor(Color.parseColor("#777777"));
         root.addView(cmdSub);
@@ -347,6 +346,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
     protected void onResume() {
         super.onResume();
         refreshSetup();
+        refreshStockVoiceStatus();
         // Revive the hook if it should be running but is not. Opening the app
         // also clears Android's stopped flag, which is what blocks the boot
         // broadcast after a force-stop, so this is the reliable recovery path.
@@ -360,6 +360,96 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
         if (hasFocus) refreshSetup();
+    }
+
+    /* ---------------- Stock BYD voice assistant options ---------------- */
+
+    private void addStockVoiceOptions(LinearLayout root) {
+        TextView header = new TextView(this);
+        header.setText("ตั้งค่าผู้ช่วยเสียง BYD");
+        header.setTextColor(Color.parseColor("#1565C0"));
+        header.setTypeface(header.getTypeface(), Typeface.BOLD);
+        header.setTextSize(14f);
+        root.addView(header);
+
+        final SharedPreferences settings = getSharedPreferences(VOICE_OPTIONS_PREFS, MODE_PRIVATE);
+        final android.widget.Switch experimental = new android.widget.Switch(this);
+        experimental.setText("แสดงตัวเลือก Freeze / คืนค่า (ทดลอง)");
+        experimental.setChecked(settings.getBoolean(KEY_EXPERIMENTAL_VOICE, false));
+        root.addView(experimental);
+
+        final LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(dp(8), dp(8), dp(8), dp(8));
+        panel.setVisibility(experimental.isChecked() ? View.VISIBLE : View.GONE);
+        root.addView(panel);
+
+        stockVoiceStatus = new TextView(this);
+        stockVoiceStatus.setTextSize(13f);
+        panel.addView(stockVoiceStatus);
+
+        TextView warning = new TextView(this);
+        warning.setText("ทดลองขณะจอดรถเท่านั้น การปิดแอประบบอาจทำให้คำสั่งเสียงเดิมไม่ทำงาน "
+                + "หากระบบไม่อนุญาต ให้คงผู้ช่วยเดิมไว้");
+        warning.setTextSize(12f);
+        panel.addView(warning);
+
+        stockVoiceManage = new Button(this);
+        stockVoiceManage.setText("จัดการ Freeze / คืนค่าผ่านระบบ");
+        stockVoiceManage.setOnClickListener(v -> openStockVoiceSettings());
+        panel.addView(stockVoiceManage);
+
+        experimental.setOnCheckedChangeListener((button, checked) -> {
+            settings.edit().putBoolean(KEY_EXPERIMENTAL_VOICE, checked).apply();
+            panel.setVisibility(checked ? View.VISIBLE : View.GONE);
+            if (checked) refreshStockVoiceStatus();
+        });
+        refreshStockVoiceStatus();
+    }
+
+    private void refreshStockVoiceStatus() {
+        if (stockVoiceStatus == null || stockVoiceManage == null) return;
+        PackageManager pm = getPackageManager();
+        try {
+            android.content.pm.ApplicationInfo info =
+                    pm.getApplicationInfo(STOCK_VOICE_PACKAGE, 0);
+            int state = pm.getApplicationEnabledSetting(STOCK_VOICE_PACKAGE);
+            boolean disabled = state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER
+                    || state == PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED
+                    || (state == PackageManager.COMPONENT_ENABLED_STATE_DEFAULT && !info.enabled);
+            stockVoiceStatus.setText("สถานะการเปิดใช้งาน: "
+                    + (disabled ? "ปิดใช้งาน (ตรวจจากระบบ)" : "เปิดใช้งาน (ตรวจจากระบบ)")
+                    + "\n" + STOCK_VOICE_PACKAGE);
+            stockVoiceManage.setText(disabled ? "คืนค่าผู้ช่วยเสียงผ่านระบบ"
+                    : "จัดการการปิดผู้ช่วยเสียงผ่านระบบ");
+            stockVoiceManage.setEnabled(true);
+        } catch (PackageManager.NameNotFoundException e) {
+            stockVoiceStatus.setText("ไม่พบแพ็กเกจผู้ช่วยเสียงที่ยืนยันแล้วในเฟิร์มแวร์นี้");
+            stockVoiceManage.setEnabled(false);
+        } catch (RuntimeException e) {
+            stockVoiceStatus.setText("ไม่สามารถตรวจสถานะผู้ช่วยเสียงจากระบบได้");
+            stockVoiceManage.setEnabled(false);
+        }
+    }
+
+    private void openStockVoiceSettings() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("จัดการผู้ช่วยเสียงเดิม")
+                .setMessage("เปิดหน้าข้อมูลแอปของระบบเพื่อปิดหรือเปิดกลับ หากรถไม่มีปุ่มปิดใช้งาน "
+                        + "แสดงว่าเฟิร์มแวร์ไม่รองรับ ไม่ควรบังคับปิด")
+                .setNegativeButton("ยกเลิก", null)
+                .setPositiveButton("เปิดการตั้งค่า", (dialog, which) -> {
+                    try {
+                        android.content.Intent intent = new android.content.Intent(
+                                android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                android.net.Uri.parse("package:" + STOCK_VOICE_PACKAGE));
+                        startActivity(intent);
+                    } catch (RuntimeException e) {
+                        toast("รถไม่รองรับการเปิดหน้าจัดการแอปนี้");
+                    }
+                })
+                .show();
     }
 
     /* ---------------- setup state ---------------- */
@@ -383,21 +473,21 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         File md = modelDir();
 
         StringBuilder sb = new StringBuilder();
-        sb.append(mic     ? "[ok] " : "[--] ").append("microphone permission\n");
-        sb.append(model   ? "[ok] " : "[--] ").append("speech model loaded\n");
-        sb.append(api     ? "[ok] " : "[--] ").append("BYDAuto AC device (climate)\n");
-        sb.append(bodyOk  ? "[ok] " : "[--] ").append("BYDAuto bodywork device (windows)\n");
+        sb.append(mic     ? "[ok] " : "[--] ").append("สิทธิ์ไมโครโฟน\n");
+        sb.append(model   ? "[ok] " : "[--] ").append("โมเดลเสียงพร้อมใช้งาน\n");
+        sb.append(api     ? "[ok] " : "[--] ").append("เชื่อมต่อ API แอร์ (ยังไม่ยืนยันสั่งงานจริง)\n");
+        sb.append(bodyOk  ? "[ok] " : "[--] ").append("กระจก/ซันรูฟ: ไม่รองรับใน Alpha 1\n");
         if (!model) {
-            sb.append("\nspeech model expected at:\n  ")
+            sb.append("\nตำแหน่งโมเดลเสียงอังกฤษ:\n  ")
               .append(md.getAbsolutePath()).append("\n");
-            sb.append("push it with:\n");
+            sb.append("ติดตั้งโมเดลโดย:\n");
             sb.append("  adb push vosk-model-small-en-us-0.15/. \\\n    ")
               .append(md.getAbsolutePath()).append("/");
         }
-        if (!api || !bodyOk) {
-            sb.append("\ntap the app once and accept the BYDAuto permission dialog");
-            sb.append("\nif you missed it, uninstall and reinstall (or grant via adb):");
-            sb.append("\n  adb shell pm grant com.homeo.dashvoice \\\n    android.permission.BYDAUTO_AC_COMMON");
+        if (!api) {
+            sb.append("\nอนุญาตสิทธิ์แอร์ผ่านหน้าต่างของระบบ");
+            sb.append("\nถ้ารถไม่อนุญาต ระบบจะไม่ส่งคำสั่ง");
+
         }
         setupView.setText(sb.toString());
 
@@ -428,10 +518,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
                 == PackageManager.PERMISSION_GRANTED) {
             ac = BydAcApi.tryCreate(this);
         }
-        if (checkSelfPermission("android.permission.BYDAUTO_BODYWORK_COMMON")
-                == PackageManager.PERMISSION_GRANTED) {
-            body = BydBodyworkApi.tryCreate(this);
-        }
+        body = null; // Alpha 1: climate only.
     }
 
     @Override
@@ -447,7 +534,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
                 final boolean ok = engine.loadModel(modelDir());
                 runOnUiThread(new Runnable() {
                     @Override public void run() {
-                        if (!ok) append("model not loaded - see checklist");
+                        if (!ok) append("ยังไม่โหลดโมเดลเสียง — ดูรายการด้านบน");
                         refreshSetup();
                     }
                 });
@@ -470,11 +557,11 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         b.setTextSize(12f);
         b.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
-                if (ac == null) { toast("AC API not available"); return; }
+                if (ac == null) { toast("ยังเข้าถึงระบบแอร์ไม่ได้"); return; }
                 heard.setText("\u201c" + phrase + "\u201d (manual)");
                 append("manual: " + phrase);
                 List<Commands.Entry> m = Commands.matchAll(phrase);
-                if (m.isEmpty()) { append("no command matched"); return; }
+                if (m.isEmpty()) { append("ไม่พบคำสั่งที่ตรงกัน"); return; }
                 dispatch(m);
             }
         });
@@ -489,13 +576,13 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
     private void onTalk() {
         if (engine.isListening()) { engine.stopListening(); return; }
         status.setText("");
-        heard.setText("listening\u2026");
+        heard.setText("กำลังฟัง\u2026");
         engine.startListening(this);
     }
 
     @Override
     public void onStateChange(boolean listening) {
-        talkBtn.setText(listening ? "LISTENING\u2026 (tap to stop)" : "HOLD TO TALK");
+        talkBtn.setText(listening ? "กำลังฟัง\u2026 (แตะเพื่อหยุด)" : "แตะเพื่อพูด (EN)");
         talkBtn.setBackgroundColor(listening
                 ? Color.parseColor("#C62828") : Color.parseColor("#1565C0"));
         if (listening) Feedback.listening();
@@ -509,7 +596,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
     @Override
     public void onError(String message) {
         Feedback.unheard();
-        append("ERROR: " + message);
+        append("ข้อผิดพลาด: " + message);
     }
 
     @Override
@@ -517,15 +604,15 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         Log.i(TAG, "onFinal: '" + text + "'");
         if (text == null || text.isEmpty()) {
             Feedback.unheard();
-            heard.setText("(nothing recognised)");
-            append("no speech detected - try again, closer to the mic");
+            heard.setText("ไม่พบเสียงที่รู้จำได้");
+            append("ไม่พบเสียง ลองพูดใกล้ไมโครโฟน");
             return;
         }
         heard.setText("\u201c" + text + "\u201d");
-        append("heard: " + text);
-        if (ac == null) { Feedback.refused(); append("AC API not available"); return; }
+        append("ได้ยิน: " + text);
+        if (ac == null) { Feedback.refused(); append("ยังเข้าถึงระบบแอร์ไม่ได้"); return; }
         List<Commands.Entry> matches = Commands.matchAll(text);
-        if (matches.isEmpty()) { Feedback.unheard(); append("no command matched"); return; }
+        if (matches.isEmpty()) { Feedback.unheard(); append("ไม่พบคำสั่งที่ตรงกัน"); return; }
         dispatch(matches);
     }
 
@@ -573,8 +660,8 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
         TextView title = new TextView(this);
         String badge;
         switch (g.status) {
-            case BLOCKED: badge = "   \u2014 car refuses"; break;
-            case ABSENT:  badge = "   \u2014 not fitted";  break;
+            case BLOCKED: badge = "   \u2014 รถไม่รองรับ"; break;
+            case ABSENT:  badge = "   \u2014 ไม่พร้อมใช้งาน";  break;
             default:      badge = "";
         }
         title.setText(g.title + badge);
@@ -626,10 +713,10 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
     /** A tappable phrase chip that runs the phrase through voice dispatch. */
     private View buildChip(final String phrase, CommandReference.Status status) {
         TextView chip = new TextView(this);
-        chip.setText("\u201c" + phrase + "\u201d");
+        chip.setText(CommandReference.labelFor(phrase) + "\n" + phrase);
         chip.setTextSize(11.5f);
         chip.setPadding(dp(8), dp(7), dp(8), dp(7));
-        chip.setMaxLines(2);
+        chip.setMaxLines(4);
         chip.setTextColor(Color.parseColor(
                 status == CommandReference.Status.WORKS ? "#0D47A1" : "#9E9E9E"));
 
@@ -639,13 +726,13 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
                 status == CommandReference.Status.WORKS ? "#E8F0FE" : "#EEEEEE"));
         chip.setBackground(bg);
 
-        if (status == CommandReference.Status.ABSENT) {
+        if (status != CommandReference.Status.WORKS) {
             chip.setEnabled(false);
         } else {
             chip.setOnClickListener(new View.OnClickListener() {
                 @Override public void onClick(View v) {
                     heard.setText("\u201c" + phrase + "\u201d  (tapped)");
-                    append("run: " + phrase);
+                    append("เรียกใช้: " + phrase);
                     dispatch(Commands.matchAll(phrase));
                 }
             });
@@ -666,7 +753,7 @@ public class MainActivity extends Activity implements VoskEngine.Listener {
                 for (Commands.Entry c : matches) {
                     Commands.Result r = Commands.execute(acRef, bodyRef, c);
                     Feedback.forResult(r);
-                    postAppend((r.success ? "  ok   " : "  FAIL ")
+                    postAppend((r.success ? "  สำเร็จ " : "  ไม่สำเร็จ ")
                             + c.phrase + " -> " + r.message);
                     sleep(350);   // MCU throttles rapid writes
                 }

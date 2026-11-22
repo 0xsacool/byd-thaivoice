@@ -9,9 +9,7 @@ import java.lang.reflect.Method;
  * Windows, sunroof and sunshade via
  * {@code android.hardware.bydauto.bodywork.BYDAutoBodyworkDevice}.
  *
- * <p>Requires {@code BYDAUTO_BODYWORK_COMMON} (dangerous, runtime-grantable
- * on this build). The user's consent to that permission is the only barrier
- * — no root, no signature, no bypass.
+ * <p>Not enabled in ThaiVoice Alpha 1.
  *
  * <p><b>Method surface on this unit (Di2.1H / MediaTek):</b>
  * <pre>
@@ -58,10 +56,9 @@ public class BydBodyworkApi {
     public static BydBodyworkApi tryCreate(Context ctx) {
         try {
             Class<?> c = Class.forName(CLASS_NAME);
-            // Same story as BydAcApi: BYDAUTO_BODYWORK_SET is enforced per
-            // method, so the local permission bypass is required.
+            // Respect platform permission checks.
             Object inst = c.getMethod("getInstance", Context.class)
-                    .invoke(null, new BydPermissionContext(ctx.getApplicationContext()));
+                    .invoke(null, ctx.getApplicationContext());
             if (inst == null) return null;
             Log.i(TAG, "BydBodyworkApi: acquired " + inst);
             return new BydBodyworkApi(inst);

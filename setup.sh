@@ -18,10 +18,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-PKG=com.homeo.dashvoice
+PKG=com.oxsacool.thaivoice
 MODEL_SRC=models/vosk-model-small-en-us-0.15
 MODEL_DST=/sdcard/Android/data/$PKG/files/model
-APK=build/dashvoice.apk
+APK=build/thaivoice.apk
 
 command -v adb >/dev/null || { echo "adb not found"; exit 1; }
 [ -f "$APK" ] || { echo "missing $APK - run ./build.sh first"; exit 1; }
@@ -54,7 +54,7 @@ fi
 cat <<'NOTE'
 
 Done. Launch it with:
-  adb shell am start -n com.homeo.dashvoice/.MainActivity
+  adb shell am start -n com.oxsacool.thaivoice/com.homeo.dashvoice.MainActivity
 
 The HOLD TO TALK button works immediately.
 

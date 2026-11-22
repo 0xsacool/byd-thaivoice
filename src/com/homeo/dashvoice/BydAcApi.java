@@ -13,13 +13,7 @@ import java.lang.reflect.Method;
  * we don't need the (missing) {@code android.hardware.bydauto} classes at
  * compile time.
  *
- * <p>The class enforces {@code BYDAUTO_AC_COMMON} in its own
- * {@code getInstance(Context)}. We defeat that check locally with a
- * {@code ContextWrapper} that no-ops any permission whose name contains
- * {@code BYDAUTO_}. The far-end MCU accepts these calls — verified end to
- * end: {@code start()}, {@code stop()}, {@code setAcWindLevel},
- * {@code setAcTemperature}, {@code setAcControlMode}, {@code setAcCycleMode}
- * all take effect on real hardware.
+ * <p>Uses the app's normal Context; unsupported or unauthorized operations fail.
  *
  * <p><b>Signatures nailed on this unit (Di2.1H / MediaTek):</b>
  * <pre>
@@ -69,11 +63,9 @@ public class BydAcApi {
     public static BydAcApi tryCreate(Context ctx) {
         try {
             Class<?> dev = Class.forName(CLASS_NAME);
-            // Each setter enforces BYDAUTO_AC_SET (signature-only) individually,
-            // so we still need the local permission bypass. The MCU accepts
-            // the calls once the local enforce checks pass.
+            // Respect platform permission checks.
             Object inst = dev.getMethod("getInstance", Context.class)
-                    .invoke(null, new BydPermissionContext(ctx.getApplicationContext()));
+                    .invoke(null, ctx.getApplicationContext());
             if (inst == null) {
                 Log.w(TAG, "BydAcApi: getInstance returned null");
                 return null;

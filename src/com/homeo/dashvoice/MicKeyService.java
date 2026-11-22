@@ -48,7 +48,7 @@ public class MicKeyService extends Service implements VoskEngine.Listener {
      * default: the steering-wheel button is the whole point of the app,
      * and a fresh install should work without hunting for a toggle.
      */
-    static final boolean HOOK_DEFAULT = true;
+    static final boolean HOOK_DEFAULT = false;
 
     private VoskEngine engine;
     private BydAcApi ac;
@@ -67,7 +67,7 @@ public class MicKeyService extends Service implements VoskEngine.Listener {
 
         engine = new VoskEngine();
         ac = BydAcApi.tryCreate(this);
-        body = BydBodyworkApi.tryCreate(this);
+        body = null; // Alpha 1: climate only.
 
         File modelDir = new File(getExternalFilesDir(null), "model");
         boolean ok = engine.loadModel(modelDir);
@@ -121,7 +121,7 @@ public class MicKeyService extends Service implements VoskEngine.Listener {
 
     @Override public void onStateChange(boolean listening) {
         Log.i(TAG, "MicKeyService: listening=" + listening);
-        updateNotification(listening ? "Listening…" : "Ready");
+        updateNotification(listening ? "กำลังฟัง…" : "พร้อมใช้งาน");
         // Only a blip on open — a second tone on close just adds chatter.
         if (listening) Feedback.listening();
     }
@@ -142,14 +142,14 @@ public class MicKeyService extends Service implements VoskEngine.Listener {
         Log.i(TAG, "MicKeyService onFinal: '" + text + "'");
         if (text == null || text.isEmpty()) {
             Feedback.unheard();
-            updateNotification("Nothing recognised");
+            updateNotification("ไม่พบคำพูด");
             updateNotificationLater();
             return;
         }
         java.util.List<Commands.Entry> matches = Commands.matchAll(text);
         if (matches.isEmpty()) {
             Feedback.unheard();
-            updateNotification("No command matched: " + text);
+            updateNotification("ไม่พบคำสั่ง: " + text);
             updateNotificationLater();
             return;
         }
@@ -175,11 +175,11 @@ public class MicKeyService extends Service implements VoskEngine.Listener {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel ch = new NotificationChannel(
-                    CH_ID, "DashVoice mic hook", NotificationManager.IMPORTANCE_LOW);
+                    CH_ID, "ThaiVoice ปุ่มไมค์", NotificationManager.IMPORTANCE_LOW);
             ch.setDescription("Listens for the steering-wheel mic button");
             nm.createNotificationChannel(ch);
         }
-        Notification n = buildNotification("Ready");
+        Notification n = buildNotification("พร้อมใช้งาน");
         startForeground(NOTIF_ID, n);
     }
 
@@ -197,7 +197,7 @@ public class MicKeyService extends Service implements VoskEngine.Listener {
         } else {
             b = new Notification.Builder(this);
         }
-        return b.setContentTitle("BYD DashVoice")
+        return b.setContentTitle("BYD ThaiVoice")
                 .setContentText(status)
                 .setOngoing(true)
                 .setContentIntent(pi)
@@ -214,7 +214,7 @@ public class MicKeyService extends Service implements VoskEngine.Listener {
 
     private void updateNotificationLater() {
         new android.os.Handler(getMainLooper()).postDelayed(new Runnable() {
-            @Override public void run() { updateNotification("Ready"); }
+            @Override public void run() { updateNotification("พร้อมใช้งาน"); }
         }, 2500);
     }
 

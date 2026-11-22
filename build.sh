@@ -5,7 +5,7 @@
 # unpack both AARs by hand, put their classes.jar on the javac classpath and
 # into d8, and place the arm64-v8a .so files under lib/arm64-v8a/ in the APK.
 #
-# Output: build/dashvoice.apk
+# Output: build/thaivoice.apk
 
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -45,18 +45,17 @@ echo "[3/8] aapt2 link"
 "$BT/aapt2" link \
   -I "$AJ" \
   --manifest AndroidManifest.xml \
-  --java build/gen \
+  --java build/gen --custom-package com.homeo.dashvoice \
   --target-sdk-version 28 --min-sdk-version 28 \
   -o build/unsigned-noclasses.apk \
   build/res-compiled.zip
 
 echo "[4/8] javac"
-javac -source 1.8 -target 1.8 -Xlint:-options \
+javac -encoding UTF-8 -source 1.8 -target 1.8 -Xlint:-options \
   -bootclasspath "$AJ" \
   -classpath "$CP" \
   -d build/classes \
   build/gen/com/homeo/dashvoice/R.java \
-  src/com/homeo/dashvoice/BydPermissionContext.java \
   src/com/homeo/dashvoice/BydAcApi.java \
   src/com/homeo/dashvoice/BydBodyworkApi.java \
   src/com/homeo/dashvoice/AppLauncher.java \
@@ -101,13 +100,13 @@ echo "[8/8] apksigner"
 "$BT/apksigner" sign \
   --ks build/debug.keystore --ks-pass pass:android --key-pass pass:android \
   --ks-key-alias k --min-sdk-version 28 \
-  --out build/dashvoice.apk build/aligned.apk
+  --out build/thaivoice.apk build/aligned.apk
 
 echo
-echo "Built: $(pwd)/build/dashvoice.apk ($(wc -c < build/dashvoice.apk | tr -d ' ') bytes)"
+echo "Built: $(pwd)/build/thaivoice.apk ($(wc -c < build/thaivoice.apk | tr -d ' ') bytes)"
 echo
 echo "Install:"
-echo "  adb install -r build/dashvoice.apk"
+echo "  adb install -r build/thaivoice.apk"
 echo "Push the speech model (once):"
 echo "  adb push models/vosk-model-small-en-us-0.15/. \\"
-echo "    /sdcard/Android/data/com.homeo.dashvoice/files/model/"
+echo "    /sdcard/Android/data/com.oxsacool.thaivoice/files/model/"
